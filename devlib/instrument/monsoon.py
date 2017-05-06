@@ -61,6 +61,8 @@ class MonsoonInstrument(Instrument):
         if self.process:
             self.process.kill()
 
+        os.system(self.monsoon_bin + ' --usbpassthrough off')
+
         cmd = [self.monsoon_bin,
                '--hz', str(self.sample_rate_hz),
                '--samples', '-1', # -1 means sample indefinitely
@@ -97,6 +99,11 @@ class MonsoonInstrument(Instrument):
         self.buffer_file = None
 
         self.output = (stdout, stderr)
+        os.system(self.monsoon_bin + ' --usbpassthrough on')
+
+        # Wait for USB connection to be restored
+        print ('waiting for usb connection to be back')
+        os.system('adb wait-for-device')
 
     def get_data(self, outfile):
         if self.process:
