@@ -451,7 +451,15 @@ def _initialize_without_android_home(env):
     logger.debug('Discovering ANDROID_HOME from adb path.')
     env.platform_tools = os.path.dirname(adb_full_path)
     env.android_home = os.path.dirname(env.platform_tools)
-    _init_common(env)
+    try:
+        _init_common(env)
+    except:
+        env.aapt = which('aapt')
+        if env.aapt:
+            logger.info('Using aapt: ' + env.aapt)
+        else:
+            raise RuntimeError('aapt not found, try setting ANDROID_HOME to \
+                                Android SDK or run LISA from android environment')
     return env
 
 
