@@ -4,6 +4,7 @@ import time
 import logging
 import posixpath
 import subprocess
+import tarfile
 import tempfile
 import threading
 from collections import namedtuple
@@ -280,6 +281,33 @@ class Target(object):
 
     def pull(self, source, dest, timeout=None):
         return self.conn.pull(source, dest, timeout=timeout)
+
+    def get_directory(self, source_dir, dest):
+        """ Pull a directory from the device, after compressing dir """
+        # Create all file names
+        tar_file_name = source_dir.lstrip(self.path.sep).replace(self.path.sep, '.')
+        # Host location of dir
+        outdir = os.path.join(dest, tar_file_name)
+        # Host location of archive
+        tar_file_name  = '{}.tar'.format(tar_file_name)
+        tempfile = os.path.join(dest, tar_file_name)
+
+        # Does the folder exist?
+        self.execute('ls -la {}'.format(source_dir))
+        # Try compressing the folder
+        try:
+            self.execute('{} tar -cvf {} {}'.format(self.busybox, tar_file_name,
+                                                     source_dir))
+        except TargetError:
+            self.logger.debug('Failed to run tar command on target! ' \
+                              'Not pulling directory {}'.format(source_dir))
+        # Pull the file
+        os.mkdir(outdir)
+        self.pull(tar_file_name, tempfile )
+        # Decompress
+        f = tarfile.open(tempfile, 'r')
+        f.extractall(outdir)
+        os.remove(tempfile)
 
     # execution
 
@@ -1009,10 +1037,24 @@ class AndroidTarget(Target):
                 return line.split('=', 1)[1]
         return None
 
-    def install_apk(self, filepath, timeout=None):  # pylint: disable=W0221
+    def get_sdk_version(self):
+        try:
+            return int(self.getprop('ro.build.version.sdk'))
+        except (ValueError, TypeError):
+            return None
+
+    def install_apk(self, filepath, timeout=None, replace=False, allow_downgrade=False):  # pylint: disable=W0221
         ext = os.path.splitext(filepath)[1].lower()
         if ext == '.apk':
-            return adb_command(self.adb_name, "install '{}'".format(filepath), timeout=timeout)
+            flags = []
+            if replace:
+                flags.append('-r')  # Replace existing APK
+            if allow_downgrade:
+                flags.append('-d')  # Install the APK even if a newer version is already installed
+            if self.get_sdk_version() >= 23:
+                flags.append('-g')  # Grant all runtime permissions
+            self.logger.debug("Replace APK = {}, ADB flags = '{}'".format(replace, ' '.join(flags)))
+            return adb_command(self.adb_name, "install {} '{}'".format(' '.join(flags), filepath), timeout=timeout)
         else:
             raise TargetError('Can\'t install {}: unsupported format.'.format(filepath))
 
